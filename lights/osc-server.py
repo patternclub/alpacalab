@@ -7,11 +7,11 @@ import webcolors
 
 ser = serial.Serial('/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_5573731323135141A191-if00', 115200)
 
-def ser_rgb(c,r,g,b,d,strobe):
+def ser_rgb(c,r,g,b,l,d,strobe):
     if c == strobe_channel:
-        cmd = "%dc%dR%dG%dB%dD%dS255l" % (int(c), int(r), int(g), int(b), int(d), int(strobe))
+        cmd = "%dc%dR%dG%dB%dD%dS%dl" % (int(c), int(r), int(g), int(b), int(d), int(strobe), int(l))
     else:
-        cmd = "%dc%dr%dg%db255l" % (int(c), int(r), int(g), int(b))
+        cmd = "%dc%dr%dg%db%dl" % (int(c), int(r), int(g), int(b), int(l))
     ser.write(cmd.encode())
 
 def read_password():
@@ -54,7 +54,7 @@ def on_message(client, userdata, msg):
     data = json.loads(msg.payload.decode())
     match topic:
         case "/light":
-            if data['color']:
+            if 'color' in data and data['color']:
                 (r, g, b) = webcolors.name_to_rgb(data['color'])
             else:
                 r = data['red'] if 'red' in data else 0
@@ -62,8 +62,9 @@ def on_message(client, userdata, msg):
                 b = data['blue'] if 'blue' in data else 0
             c = data['channel'] if 'channel' in data else 0
             d = data['d'] if 'd' in data else 100
+            l = data['l'] if 'l' in data else 255
             strobe = data['strobe'] if 'strobe' in data else 0
-            ser_rgb(c, r, g, b, d, strobe)
+            ser_rgb(c, r, g, b, l, d, strobe)
                 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -81,7 +82,7 @@ def rgb_callback(path, args):
             c = int(m[1])-1
         else:
             c = 0
-    ser_rgb(c, args[0], args[1], args[2])
+    ser_rgb(c, args[0], args[1], args[2], 255)
 
 def irgb_callback(path, args):
     c = chr(ord('x')+args[0])
