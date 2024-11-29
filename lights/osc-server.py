@@ -7,8 +7,11 @@ import webcolors
 
 ser = serial.Serial('/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_5573731323135141A191-if00', 115200)
 
-def ser_rgb(c,r,g,b):
-    cmd = "%s%dr%dg%db" % (c, int(r), int(g), int(b))
+def ser_rgb(c,r,g,b,d,strobe):
+    if c == strobe_channel:
+        cmd = "%dc%dR%dG%dB%dD%dS255l" % (int(c), int(r), int(g), int(b), int(d), int(strobe))
+    else:
+        cmd = "%dc%dr%dg%db255l" % (int(c), int(r), int(g), int(b))
     ser.write(cmd.encode())
 
 def read_password():
@@ -36,6 +39,8 @@ mqtt_password = args.password or read_password()
 print(mqtt_password)
 mqtt_port = 1883
 
+strobe_channel = 3
+
 subscribe_topics = ["/light"]
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -52,13 +57,13 @@ def on_message(client, userdata, msg):
             if data['color']:
                 (r, g, b) = webcolors.name_to_rgb(data['color'])
             else:
-                r = data['red'] or 0
-                g = data['green'] or 0
-                b = data['blue'] or 0
-            c = data['channel'] or 0
-            c = chr(ord('x')+int(c))
-            print(c, r, g, b)
-            ser_rgb(c, r, g, b)
+                r = data['red'] if 'red' in data else 0
+                g = data['green'] if 'green' in data else 0
+                b = data['blue'] if 'blue' in data else 0
+            c = data['channel'] if 'channel' in data else 0
+            d = data['d'] if 'd' in data else 100
+            strobe = data['strobe'] if 'strobe' in data else 0
+            ser_rgb(c, r, g, b, d, strobe)
                 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -68,26 +73,31 @@ client.username_pw_set(username=mqtt_username, password=mqtt_password)
 client.connect(mqtt_host, mqtt_port, 60)
 
 def rgb_callback(path, args):
-    c = 'x'
-    if path == "/rgb/2":
-        c = 'y'
-    if path == "/rgb/3":
-        c = 'z'
+    if len(args) == 4:
+        c = args[3]
+    else:
+        m = match(r'/rgb/(\d+)', path)
+        if m:
+            c = int(m[1])-1
+        else:
+            c = 0
     ser_rgb(c, args[0], args[1], args[2])
 
 def irgb_callback(path, args):
     c = chr(ord('x')+args[0])
     ser.write(cmd.encode())
 
+osc_server.add_method("/rgb", "iiii", rgb_callback)
 osc_server.add_method("/rgb/1", "iii", rgb_callback)
 osc_server.add_method("/rgb/2", "iii", rgb_callback)
 osc_server.add_method("/rgb/3", "iii", rgb_callback)
+osc_server.add_method("/rgb/4", "iii", rgb_callback)
 
 timeout = 0.1
 
 while True:
     r, w, e = select.select(
-        [osc_server.fileno(), client.socket()],
+        [osc_server.fileno(), client.socket(), ser],
         [client.socket()] if client.want_write() else [],
         [],
         1
@@ -103,3 +113,6 @@ while True:
 
     if osc_server.fileno() in r:
         osc_server.recv()
+
+    if ser in r:
+        print("arduino says: ", ser.readline())
