@@ -3,15 +3,19 @@
 import liblo, serial, select, argparse, re, json
 import paho.mqtt.client as mqtt
 import sys
-import webcolors
 
-ser = serial.Serial('/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_5573731323135141A191-if00', 115200)
+ser = serial.Serial('/dev/serial/by-id/usb-Teensyduino_USB_Serial_12186130-if00', 115200)
 
 def read_password():
     f = open('/home/alpaca/.mqtt-password', 'r')
     password = f.read().rstrip()
     f.close()
     return(password)
+
+
+def click(n, duration):
+    cmd = "%d:%d\n" % (int(n), int(duration))
+    ser.write(cmd.encode())
 
 try:
     osc_server = liblo.Server(7070)
