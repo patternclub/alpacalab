@@ -7,7 +7,7 @@ import sys
 ser = serial.Serial('/dev/serial/by-id/usb-Teensyduino_USB_Serial_12186130-if00', 115200)
 
 def read_password():
-    f = open('/home/alpaca/.mqtt-password', 'r')
+    f = open('/home/alex/.mqtt-password', 'r')
     password = f.read().rstrip()
     f.close()
     return(password)
@@ -47,11 +47,10 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     topic = msg.topic
     data = json.loads(msg.payload.decode())
-    match topic:
-        case "/click":
-            n = data['n'] if 'n' in data else 0
-            duration = data['duration'] if 'duration' in data else 100
-            click(n, duration)
+    if topic == "/click":
+        n = data['n'] if 'n' in data else 0
+        duration = data['duration'] if 'duration' in data else 100
+        click(n, duration)
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
