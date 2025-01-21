@@ -7,9 +7,11 @@ import ujson
 
 from umqtt.simple import MQTTClient
 from mycolour import hsv_to_rgb, colour_names
+from inventor import Inventor2040W
 
-print(colour_names)
-NAME = "lighty"
+NAME = "alex"
+
+board = Inventor2040W()
 
 # Total number of LEDs on our LED strip
 NUM_LEDS = 66
@@ -20,6 +22,11 @@ INTERVAL = 60
 mqtt_server = "slab.org"
 mqtt_user = "alpaca"
 mqtt_pass = "dorkface"
+
+#mqtt_server = "sponge.algorithmicpattern.org"
+#mqtt_user = "alex"
+#mqtt_pass = "betweenyourtoes"
+
 
 status = {}
 
@@ -52,7 +59,8 @@ def connect():
 # led_strip = plasma.APA102(NUM_LEDS, 0, 0, plasma2040.DAT, plasma2040.CLK)
 
 # WS2812 / NeoPixel™ LEDs
-led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_BGR)
+# led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_BGR)
+led_strip = None
 
 # Start connection to the network
 connect()
@@ -66,9 +74,13 @@ print("Successfully connected to {}. Your Plasma 2350 W's IP is: {}".format(WIFI
 
 color = (255,255,255)
 
+last = time.ticks_ms()
+
 def sub_cb(topic, s_msg):
-    global color
-    if topic == b"/starlight":
+    global color, last
+    topic = topic.decode('ASCII')
+    # print(topic)
+    if led_strip and (topic == "/light/all" or topic == "/light/" + NAME):
         msg = ujson.loads(s_msg)
         if 'light' in msg:
             light = msg['light']
@@ -78,31 +90,50 @@ def sub_cb(topic, s_msg):
                 color = (x[0], x[1], x[2])
             elif 'hue' in msg and 'sat' in msg and 'val' in msg:
                 color = hsv_to_rgb((msg['hue'], msg['sat'], msg['val']))
-                print(color)
             elif 'red' in msg and 'green' in msg and 'blue' in msg:
                 color = (msg['red']*255.0, msg['green']*255.0, msg['blue']*255.0)
             status[light] = color
             led_strip.set_rgb(int(light), *color)
+    elif topic == "/move/all" or topic == "/move/" + NAME:
+        msg = ujson.loads(s_msg)
+        # print(msg)
+        if 'by' in msg:
+            motor = msg['motor'] or 0
+            by = msg['by']
+            #print(by)
+            s = board.servos[motor]
+            s.value(by)
+            foo = time.ticks_ms()
+            print(foo-last)
+            last = foo
+            
+            
 
 mqtt = MQTTClient(NAME, mqtt_server, user=mqtt_user, password=mqtt_pass)
 mqtt.set_callback(sub_cb)
 
 mqtt.connect()
-mqtt.subscribe("/starlight")
+mqtt.subscribe("/light/all")
+mqtt.subscribe("/light/" + NAME)
+mqtt.subscribe("/move/all")
+mqtt.subscribe("/move/" + NAME)
 
-print("Connected to %s, subscribed to %s topic" % (mqtt_server, "/starlight"))
+print("Connected to %s mqtt server" % (mqtt_server,))
 mqtt.set_callback(sub_cb)
-# Start updating the LED strip
-led_strip.start()
+
+if led_strip:
+    # Start updating the LED strip
+    led_strip.start()
 
 while True:
     if wlan.isconnected():
         try:
             mqtt.wait_msg()
         except OSError:
-            print("Error: Failed to get new colour")
+            print("OS Error!")
     else:
         print("Lost connection to network {}".format(WIFI_SSID))
         time.sleep(10);
     mqtt.check_msg()
-    
+
+print("oh!")
