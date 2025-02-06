@@ -4,65 +4,75 @@ import network
 import time
 import requests
 import ujson
+import ubinascii
 
 from umqtt.simple import MQTTClient
 from mycolour import hsv_to_rgb, colour_names
 from inventor import Inventor2040W
 
-from config import name, wifi_name, wifi_password, mqtt_server, mqtt_user, mqtt_pass
+from config import name, wifis, mqtt_server, mqtt_user, mqtt_pass
+
+print("hello")
 
 board = Inventor2040W()
 
 # Total number of LEDs on our LED strip
-NUM_LEDS = 66
-
-# How long between cheerslight updates in seconds
-INTERVAL = 60
+NUM_LEDS = 50
 
 status = {}
 
-# Check and import the SSID and Password from secrets.py
-try:
-    if wifi_name == "":
-        raise ValueError("wifi_name in 'config.py' is empty!")
-    if wifi_password == "":
-        raise ValueError("wifi_password in 'config.py' is empty!")
-except ImportError:
-    raise ImportError("'config.py' is missing or badly formatted.")
-except ValueError as e:
-    print(e)
-
 network.hostname(name)
+
 wlan = network.WLAN(network.STA_IF)
 
 
+
 def connect():
+    global ip_addr, mac
     # Connect to the network specified in secrets.py
     wlan.active(True)
-    wlan.connect(wifi_name, wifi_password)
-    while wlan.isconnected() is False:
-        print("Attempting connection to {}".format(wifi_name))
-        time.sleep(1)
+    print("scanning...")
+    found = wlan.scan()
+    wifi_name = ""
+    connected = False
+    for w in found:
+        wifi_name = w[0].decode('ascii')
+        if wifi_name in wifis:
+            wlan.connect(wifi_name, wifis[wifi_name])
+            while wlan.isconnected() is False:
+                print("Attempting connection to {}".format(wifi_name))
+                time.sleep(1)
+            connected = True
+            break
+
+    if connected:
+        ip_addr = wlan.ipconfig('addr4')[0]
+        print(ip_addr)
+        mac = ubinascii.hexlify(wlan.config('mac')).decode()
+        print("Successfully connected to {}. Your Plasma 2350 W's IP is: {} mac is: {}".format(wifi_name, ip_addr, mac))
+
 
 
 # APA102 / DotStar™ LEDs
 # led_strip = plasma.APA102(NUM_LEDS, 0, 0, plasma2040.DAT, plasma2040.CLK)
 
 # WS2812 / NeoPixel™ LEDs
-# led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_BGR)
-led_strip = None
+led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_BGR)
+#led_strip = None
 
 # Start connection to the network
 connect()
 
-# Store the local IP address
-ip_addr = wlan.ipconfig('addr4')[0]
-
-# Let the user know the connection has been successful
-# and display the current IP address of the Plasma 2350 W
-print("Successfully connected to {}. Your Plasma 2350 W's IP is: {}".format(wifi_name, ip_addr))
-
 color = (255,255,255)
+
+timeoff = {}
+
+def check_timeoffs():
+    for light, value in timeoff.items():
+        if time.ticks_diff(value, time.ticks_ms()) < 0:
+            print("bye", light)
+            led_strip.set_rgb(int(light), *(0,0,0))
+            del timeoff[light]
 
 def sub_cb(topic, s_msg):
     global color, last
@@ -81,6 +91,11 @@ def sub_cb(topic, s_msg):
                 color = (msg['red']*255.0, msg['green']*255.0, msg['blue']*255.0)
             status[light] = color
             led_strip.set_rgb(int(light), *color)
+            if 'duration' in msg and 'blink' in msg and msg["blink"]:
+                t = time.ticks_add(int(time.ticks_ms()), int(msg["duration"]*1000))
+                timeoff[int(light)] = t
+            
+            
     elif topic == "/move/all" or topic == "/move/" + name:
         msg = ujson.loads(s_msg)
         if 'move' in msg:
@@ -102,20 +117,27 @@ mqtt.subscribe("/move/" + name)
 print("Connected to %s mqtt server" % (mqtt_server,))
 mqtt.set_callback(sub_cb)
 
+mqtt.publish("/hello", "%s is here, with ip address %s and mac %s" % (name, ip_addr, mac))
+
 if led_strip:
     # Start updating the LED strip
     led_strip.start()
+    led_strip.set_rgb(0, *color)
 
 while True:
     if wlan.isconnected():
         try:
-            mqtt.wait_msg()
+            mqtt.check_msg()
         except OSError:
             print("OS Error!")
     else:
         print("Lost connection to network {}".format(WIFI_SSID))
         time.sleep(10);
-    mqtt.check_msg()
+    # mqtt.check_msg()
+    check_timeoffs()
+
+            
+        
 
 print("oh!")
 
