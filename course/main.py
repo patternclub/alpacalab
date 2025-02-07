@@ -12,7 +12,7 @@ from inventor import Inventor2040W
 
 from config import name, wifis, mqtt_server, mqtt_user, mqtt_pass
 
-print("hello")
+print("hello, I'm ", name)
 
 board = Inventor2040W()
 
@@ -57,7 +57,7 @@ def connect():
 # led_strip = plasma.APA102(NUM_LEDS, 0, 0, plasma2040.DAT, plasma2040.CLK)
 
 # WS2812 / NeoPixel™ LEDs
-led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_BGR)
+led_strip = plasma.WS2812(NUM_LEDS, 0, 0, plasma2040.DAT, color_order=plasma.COLOR_ORDER_RGB)
 #led_strip = None
 
 # Start connection to the network
@@ -77,8 +77,10 @@ def check_timeoffs():
 def sub_cb(topic, s_msg):
     global color, last
     topic = topic.decode('ASCII')
+    print("hmm")
     if led_strip and (topic == "/light/all" or topic == "/light/" + name):
         msg = ujson.loads(s_msg)
+        print(msg)
         if 'light' in msg:
             light = msg['light']
             color = (0,0,0)
@@ -92,10 +94,10 @@ def sub_cb(topic, s_msg):
             status[light] = color
             led_strip.set_rgb(int(light), *color)
             if 'duration' in msg and 'blink' in msg and msg["blink"]:
-                t = time.ticks_add(int(time.ticks_ms()), int(msg["duration"]*1000))
+                # Add 20ms to allow for processing delay, to avoid switching off between
+                # contiguous events
+                t = time.ticks_add(int(time.ticks_ms()), int(msg["duration"]*1000) + 20)
                 timeoff[int(light)] = t
-            
-            
     elif topic == "/move/all" or topic == "/move/" + name:
         msg = ujson.loads(s_msg)
         if 'move' in msg:
@@ -132,11 +134,12 @@ while True:
             print("OS Error!")
     else:
         print("Lost connection to network {}".format(WIFI_SSID))
-        time.sleep(10);
+        time.sleep(3);
     # mqtt.check_msg()
     check_timeoffs()
+    # give the cpu a rest
+    #time.sleep(0.005)
 
-            
         
 
 print("oh!")
