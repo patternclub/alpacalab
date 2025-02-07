@@ -19,8 +19,6 @@ board = Inventor2040W()
 # Total number of LEDs on our LED strip
 NUM_LEDS = 50
 
-status = {}
-
 network.hostname(name)
 
 wlan = network.WLAN(network.STA_IF)
@@ -70,34 +68,38 @@ timeoff = {}
 def check_timeoffs():
     for light, value in timeoff.items():
         if time.ticks_diff(value, time.ticks_ms()) < 0:
-            print("bye", light)
             led_strip.set_rgb(int(light), *(0,0,0))
             del timeoff[light]
+
+def light_on(light, color, msg):
+    led_strip.set_rgb(light, *color)
+    if 'duration' in msg and 'blink' in msg and msg["blink"]:
+        # Add 20ms to allow for processing delay, to avoid switching off between
+        # contiguous events
+        t = time.ticks_add(int(time.ticks_ms()), int(msg["duration"]*1000) + 20)
+        timeoff[light] = t
+
 
 def sub_cb(topic, s_msg):
     global color, last
     topic = topic.decode('ASCII')
-    print("hmm")
     if led_strip and (topic == "/light/all" or topic == "/light/" + name):
         msg = ujson.loads(s_msg)
-        print(msg)
         if 'light' in msg:
             light = msg['light']
             color = (0,0,0)
             if 'color' in msg and msg['color'] in colour_names:
                 x = colour_names[msg['color']]
                 color = (x[0], x[1], x[2])
-            elif 'hue' in msg and 'sat' in msg and 'val' in msg:
-                color = hsv_to_rgb((msg['hue'], msg['sat'], msg['val']))
+            elif 'hue' in msg:
+                color = hsv_to_rgb((msg['hue'], msg.get('saturation', 1), msg.get('brightness', 1)))
             elif 'red' in msg and 'green' in msg and 'blue' in msg:
                 color = (msg['red']*255.0, msg['green']*255.0, msg['blue']*255.0)
-            status[light] = color
-            led_strip.set_rgb(int(light), *color)
-            if 'duration' in msg and 'blink' in msg and msg["blink"]:
-                # Add 20ms to allow for processing delay, to avoid switching off between
-                # contiguous events
-                t = time.ticks_add(int(time.ticks_ms()), int(msg["duration"]*1000) + 20)
-                timeoff[int(light)] = t
+            if int(light) == -1:
+                for i in range(0, NUM_LEDS):
+                    light_on(i, color, msg)
+            else:
+                light_on(int(light), color, msg)
     elif topic == "/move/all" or topic == "/move/" + name:
         msg = ujson.loads(s_msg)
         if 'move' in msg:
